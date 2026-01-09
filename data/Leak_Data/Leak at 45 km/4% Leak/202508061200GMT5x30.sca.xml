@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<FileDetail>
+  <ArchiveName>202508061200GMT5x30.sca</ArchiveName>
+  <LocalStartTime>06/Aug/2025  12:00:00 India Standard Time</LocalStartTime>
+  <LocalEndTime>07/Aug/2025  00:00:00 India Standard Time</LocalEndTime>
+  <StartTime>1754461800</StartTime>
+  <EndTime>1754505000</EndTime>
+  <Length>43200</Length>
+  <Hot>True</Hot>
+  <Originator>SSU</Originator>
+  <Server>7T4ST34</Server>
+  <ProductVersion>5.0.7</ProductVersion>
+</FileDetail>
