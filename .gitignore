@@ -1,0 +1,13 @@
+# Directories to ignore
+node_modules/
+dist/
+build/
+.env
+npy/
+
+# files to ignore
+*.csv
+*.sca
+*.config
+*.xls
+*.xlsx
