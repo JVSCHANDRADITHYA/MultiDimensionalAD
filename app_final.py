@@ -24,6 +24,8 @@ from typing import Dict, List
 
 import numpy as np
 import pandas as pd
+from collections import defaultdict, deque
+import matplotlib.pyplot as plt
 
 try:
     from sklearn.decomposition import IncrementalPCA
@@ -56,6 +58,12 @@ PEER_DEVIATION_Z = 2.5
 INIT_FRAMES = 40  # number of initial rows to label sensors as COLD_start
 MALFUNCTION_CONSEC_FRAMES = 5  # consecutive deviating rows to mark malfunction
 GLOBAL_N_COMPONENTS = 4  # components for the global PCA (limited by sensor count)
+
+WINDOW = 100
+
+# Anomaly visualization helpers
+ANOMALY_LINES = []
+ANOMALY_LIFETIME = 60
 
 
 def compute_peer_dev_chunk(
@@ -248,6 +256,33 @@ def main(argv=None):
         if log_f:
             log_f.write(line + "\n")
 
+    def compute_pc1(cols, buf):
+        # Lightweight PC1 estimate using SVD on last WINDOW samples
+        if len(cols) < 2:
+            return
+        mats = []
+        for c in cols:
+            arr = list(sensor_buffers.get(c, []))
+            if len(arr) == 0:
+                continue
+            if len(arr) < WINDOW:
+                pad = [arr[-1]] * (WINDOW - len(arr))
+                vec = pad + arr[-WINDOW:]
+            else:
+                vec = arr[-WINDOW:]
+            mats.append(vec)
+        if len(mats) < 2:
+            return
+        X = np.array(mats)  # shape (n_sensors, WINDOW)
+        Xc = X - X.mean(axis=0)
+        X_t = Xc.T  # shape (WINDOW, n_sensors)
+        if X_t.shape[0] == 0 or X_t.shape[1] < 2:
+            return
+        U, S, Vt = np.linalg.svd(X_t, full_matrices=False)
+        pc1_vec = Vt[0, :]
+        pc1_scores = X_t @ pc1_vec
+        buf.append(float(pc1_scores[-1]))
+
     groups = {}
     for chunk in reader:
         if first_chunk:
@@ -298,6 +333,40 @@ def main(argv=None):
                 chunk[c] = 0
         # Reorder columns to maintain consistency
         chunk = chunk[all_sensor_cols]
+        # Anomaly detection for the current chunk (per-row, approximate)
+        anomaly_present_chunk = False
+        anomaly_cols_chunk = []
+        sensor_ids_all = all_sensor_cols
+        for col in sensor_ids_all:
+            buf = list(sensor_buffers.get(col, []))
+            if len(buf) >= 3:
+                prev_vals = buf[:-1]
+                if len(prev_vals) >= 2:
+                    mean_prev = float(np.mean(prev_vals))
+                    std_prev = float(np.std(prev_vals, ddof=0))
+                    if std_prev > 0:
+                        z = (buf[-1] - mean_prev) / std_prev
+                        if abs(z) > 2.5:
+                            anomaly_present_chunk = True
+                            anomaly_cols_chunk.append(col)
+        if anomaly_present_chunk:
+            l1 = ax_pressure.axvline(
+                t_global, color="red", linestyle=":", lw=1.5, alpha=0.9
+            )
+            l2 = ax_temp.axvline(
+                t_global, color="red", linestyle=":", lw=1.5, alpha=0.9
+            )
+            l3 = ax_flow.axvline(
+                t_global, color="red", linestyle=":", lw=1.5, alpha=0.9
+            )
+            ANOMALY_LINES.extend([l1, l2, l3])
+            while len(ANOMALY_LINES) > 3 * ANOMALY_LIFETIME:
+                old = ANOMALY_LINES.pop(0)
+                try:
+                    old.remove()
+                except Exception:
+                    pass
+            print(f"[ANOMALY] time={t_global} sensors={anomaly_cols_chunk}")
 
         # Update per-group PCA with this chunk (fit/partial_fit)
         for g, pca in pca_by_group.items():
