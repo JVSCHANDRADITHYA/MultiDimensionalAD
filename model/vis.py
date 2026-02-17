@@ -101,6 +101,52 @@ reg = LinearRegression()
 sensor_log = []
 system_log = []
 
+# ================= LIVE PLOT SETUP =================
+
+fig, ax = plt.subplot_mosaic(
+    [
+        ["A", "B", "C"],
+        ["D", "E", "E"],
+    ],
+    constrained_layout=True,
+    figsize=(15, 9)
+)
+
+ax_pressure = ax["A"]
+ax_temp     = ax["B"]
+ax_flow     = ax["C"]
+
+ax_avg = ax["D"]     # avg P/T/F
+ax_pca = ax["E"]     # PC1 per group
+
+ax_pressure.set_title("Pressure Sensors")
+ax_temp.set_title("Temperature Sensors")
+ax_flow.set_title("Flow Sensors")
+
+ax_avg.set_title("Average P / T / F")
+ax_pca.set_title("PCA (PC1) per Group")
+
+for a in [ax_pressure, ax_temp, ax_flow, ax_avg, ax_pca]:
+    a.set_xlabel("Time")
+    a.set_ylabel("Value")
+    a.grid(True)
+
+# ---- line holders ----
+pressure_lines = {}
+temp_lines = {}
+flow_lines = {}
+
+avg_p_line, = ax_avg.plot([], [], label="Avg P")
+avg_t_line, = ax_avg.plot([], [], label="Avg T")
+avg_f_line, = ax_avg.plot([], [], label="Avg F")
+ax_avg.legend()
+
+pc_p_line, = ax_pca.plot([], [], label="P_PC1")
+pc_t_line, = ax_pca.plot([], [], label="T_PC1")
+pc_f_line, = ax_pca.plot([], [], label="F_PC1")
+ax_pca.legend()
+
+
 # ================= MAIN LOOP =================
 
 for t, row in df.iterrows():
@@ -197,6 +243,60 @@ for t, row in df.iterrows():
     else:
         decision = "NORMAL"
 
+    # ================= LIVE PLOTTING =================
+
+    # ---- Pressure / Temp / Flow ----
+    for s in groups["P"]:
+        if s not in pressure_lines:
+            pressure_lines[s], = ax_pressure.plot([], [], lw=0.8)
+        y = list(buffers[s])
+        x = np.arange(len(y))
+        pressure_lines[s].set_data(x, y)
+
+    for s in groups["T"]:
+        if s not in temp_lines:
+            temp_lines[s], = ax_temp.plot([], [], lw=0.8)
+        y = list(buffers[s])
+        x = np.arange(len(y))
+        temp_lines[s].set_data(x, y)
+
+    for s in groups["F"]:
+        if s not in flow_lines:
+            flow_lines[s], = ax_flow.plot([], [], lw=0.8)
+        y = list(buffers[s])
+        x = np.arange(len(y))
+        flow_lines[s].set_data(x, y)
+
+    for a in [ax_pressure, ax_temp, ax_flow]:
+        a.relim()
+        a.autoscale_view()
+
+    # ---- Averages ----
+    if len(recon_err_buf) > 0:
+        avg_p = np.mean([buffers[c][-1] for c in groups["P"] if buffers[c]])
+        avg_t = np.mean([buffers[c][-1] for c in groups["T"] if buffers[c]])
+        avg_f = np.mean([buffers[c][-1] for c in groups["F"] if buffers[c]])
+
+        avg_p_line.set_data(range(len(recon_err_buf)), list(recon_err_buf))
+        avg_t_line.set_data(range(len(recon_err_buf)), list(recon_err_buf))
+        avg_f_line.set_data(range(len(recon_err_buf)), list(recon_err_buf))
+
+        ax_avg.relim()
+        ax_avg.autoscale_view()
+
+    # ---- PCA PC1s ----
+    pc_hist = np.array(system_log[-WINDOW:]) if len(system_log) > 0 else None
+    if pc_hist is not None:
+        pc_p_line.set_data(range(len(pc_hist)), [x["P_PC1"] for x in pc_hist])
+        pc_t_line.set_data(range(len(pc_hist)), [x["T_PC1"] for x in pc_hist])
+        pc_f_line.set_data(range(len(pc_hist)), [x["F_PC1"] for x in pc_hist])
+
+        ax_pca.relim()
+        ax_pca.autoscale_view()
+
+    plt.pause(0.001)
+
+    
     # ---- logs ----
     for c in df.columns:
         sensor_log.append({
